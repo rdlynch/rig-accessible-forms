@@ -1,319 +1,454 @@
 #!/bin/bash
+# server-setup.sh - Complete WordPress server setup with Caddy, MariaDB, PHP 8.4
+# Run once on fresh Ubuntu 24.04 LTS server
+# Usage: ./server-setup.sh
+
 set -euo pipefail
-trap 'echo "ERROR: Setup failed at line $LINENO"; exit 1' ERR
+trap 'echo "ERROR: Setup failed at line $LINENO" >&2; exit 1' ERR
 
-AOS_REPO_DIR="/opt/server-scripts"
-AOS_LOG="/var/log/aos-setup.log"
-AOS_TIMEZONE="America/Chicago"
-
+# Configuration
+TIMEZONE="America/Chicago"
 SITES_DIR="/var/www"
-BACKUP_DIR="/var/backups/sites"
-FORM_LOG_DIR="/var/log/forms"
-RATE_CACHE_DIR="/var/cache/aos-forms"
-SCRIPT_BIN_DIR="/usr/local/sbin"
-WWW_USER="www-data"
-WWW_GROUP="www-data"
-
-CREATE_SWAP="yes"
-SWAP_FILE="/swapfile"
+BACKUP_DIR="/backups/wordpress"
+LOG_FILE="/var/log/server-setup.log"
 SWAP_SIZE="4G"
+SWAP_FILE="/swapfile"
 
-ENABLE_UFW="yes"
-SSH_PORT="${SSH_PORT:-22}"
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
 
-log() { echo "$(date -Is) $*" | tee -a "$AOS_LOG" ; }
-ensure_dir() { install -d -m "$2" "$1"; }
-file_has_line() { grep -qsF "$2" "$1"; }
-require_root() { [[ $EUID -eq 0 ]] || { echo "Please run as root" >&2; exit 1; }; }
-require_repo() { [[ -d "$AOS_REPO_DIR" ]] || { echo "Repository not found at $AOS_REPO_DIR" >&2; exit 1; }; }
+log() {
+    echo "$(date -Is) $*" | tee -a "$LOG_FILE"
+}
 
-require_root
-require_repo
-ensure_dir "$(dirname "$AOS_LOG")" 755
-: > "$AOS_LOG"
+log_colored() {
+    echo -e "${2:-$GREEN}$(date -Is) $1${NC}" | tee -a "$LOG_FILE"
+}
 
-log "Alpha Omega Strategies server setup starting"
-export DEBIAN_FRONTEND=noninteractive
+require_root() {
+    [[ $EUID -eq 0 ]] || { 
+        echo -e "${RED}This script must be run as root${NC}" >&2
+        exit 1
+    }
+}
 
-log "apt update and base packages"
-apt-get update -y
-apt-get install -y --no-install-recommends \
-  ca-certificates curl wget unzip tar gnupg ufw fail2ban \
-  software-properties-common apt-transport-https lsb-release \
-  unattended-upgrades logrotate jq zip bzip2 rsync \
-  systemd-timesyncd \
-  php8.2-cli php8.2-fpm php8.2-curl php8.2-xml php8.2-zip php8.2-mbstring \
-  php8.2-gd php8.2-intl php8.2-bcmath php8.2-opcache php-apcu
+# Check if running on Ubuntu 24.04
+check_ubuntu() {
+    if ! grep -q "Ubuntu 24.04" /etc/os-release; then
+        echo -e "${RED}This script requires Ubuntu 24.04 LTS${NC}" >&2
+        exit 1
+    fi
+}
 
-# Add YAML extension for Grav if the package exists
-if apt-cache show php8.2-yaml >/dev/null 2>&1; then
-  apt-get install -y --no-install-recommends php8.2-yaml
-elif apt-cache show php-yaml >/dev/null 2>&1; then
-  apt-get install -y --no-install-recommends php-yaml
-fi
+# Create necessary directories
+setup_directories() {
+    log_colored "Creating directory structure"
+    mkdir -p "$SITES_DIR" "$BACKUP_DIR" "$(dirname "$LOG_FILE")"
+    chmod 755 "$SITES_DIR"
+    chmod 750 "$BACKUP_DIR"
+}
 
-# Enable APCu explicitly (helps Grav and keeps CLI tools fast)
-phpenmod apcu || true
-echo "apc.enable_cli=1" > /etc/php/8.2/cli/conf.d/20-apcu.ini
+# Update system and install base packages
+update_system() {
+    log_colored "Updating system packages"
+    export DEBIAN_FRONTEND=noninteractive
+    
+    apt update -y
+    apt upgrade -y
+    
+    # Install essential packages
+    apt install -y \
+        curl \
+        wget \
+        unzip \
+        git \
+        ufw \
+        fail2ban \
+        htop \
+        nano \
+        software-properties-common \
+        apt-transport-https \
+        ca-certificates \
+        gnupg \
+        lsb-release \
+        unattended-upgrades
+}
 
-log "Setting timezone and enabling NTP"
-timedatectl set-timezone "$AOS_TIMEZONE" || true
-timedatectl set-ntp true || true
+# Configure timezone and NTP
+setup_timezone() {
+    log_colored "Setting timezone to $TIMEZONE"
+    timedatectl set-timezone "$TIMEZONE"
+    timedatectl set-ntp true
+}
 
-# Swap (idempotent)
-if [[ "$CREATE_SWAP" == "yes" ]]; then
-  if [[ ! -f "$SWAP_FILE" ]]; then
-    log "Creating swap $SWAP_FILE $SWAP_SIZE"
-    fallocate -l "$SWAP_SIZE" "$SWAP_FILE"
-    chmod 600 "$SWAP_FILE"
-    mkswap "$SWAP_FILE"
-    swapon "$SWAP_FILE"
-    echo "$SWAP_FILE none swap sw 0 0" >> /etc/fstab
-    printf "vm.swappiness=10\nvm.vfs_cache_pressure=50\n" >/etc/sysctl.d/99-aos.conf
-    sysctl --system >/dev/null
-  else
-    log "Swap already present"
-  fi
-fi
+# Create swap file if not exists
+setup_swap() {
+    if [[ ! -f "$SWAP_FILE" ]]; then
+        log_colored "Creating ${SWAP_SIZE} swap file"
+        fallocate -l "$SWAP_SIZE" "$SWAP_FILE"
+        chmod 600 "$SWAP_FILE"
+        mkswap "$SWAP_FILE"
+        swapon "$SWAP_FILE"
+        echo "$SWAP_FILE none swap sw 0 0" >> /etc/fstab
+        
+        # Optimize swappiness for VPS
+        echo "vm.swappiness=10" >> /etc/sysctl.conf
+        echo "vm.vfs_cache_pressure=50" >> /etc/sysctl.conf
+        sysctl -p
+    else
+        log_colored "Swap file already exists"
+    fi
+}
 
-# UFW
-if [[ "$ENABLE_UFW" == "yes" ]]; then
-  log "Configuring UFW"
-  ufw --force reset
-  ufw default deny incoming
-  ufw default allow outgoing
-  ufw allow "$SSH_PORT"/tcp
-  ufw allow 80/tcp
-  ufw allow 443/tcp
-  ufw --force enable
-fi
+# Install Caddy web server
+install_caddy() {
+    log_colored "Installing Caddy web server"
+    
+    # Add Caddy repository
+    apt install -y debian-keyring debian-archive-keyring apt-transport-https
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+    
+    apt update -y
+    apt install -y caddy
+    
+    # Create basic Caddyfile
+    cat > /etc/caddy/Caddyfile << 'EOF'
+{
+    email wordpress@ruralimpactgroup.com
+    admin localhost:2019
+}
 
-# SSH hardening
-log "Hardening SSH"
-SSHD=/etc/ssh/sshd_config
-sed -i 's/^[# ]*PasswordAuthentication .*/PasswordAuthentication no/' "$SSHD"
-sed -i 's/^[# ]*PermitRootLogin .*/PermitRootLogin prohibit-password/' "$SSHD"
-if ! file_has_line "$SSHD" "ClientAliveInterval 300"; then
-  printf "\nClientAliveInterval 300\nClientAliveCountMax 2\n" >> "$SSHD"
-fi
-systemctl reload ssh || true
-
-# Fail2ban
-log "Configuring Fail2ban"
-ensure_dir /etc/fail2ban/jail.d 755
-if [[ -f "$AOS_REPO_DIR/jail.local" ]]; then
-  install -m 0644 "$AOS_REPO_DIR/jail.local" /etc/fail2ban/jail.d/aos.local
-fi
-# Correct location for Caddy JSON filter
-if [[ -f "$AOS_REPO_DIR/caddy-auth.conf" ]]; then
-  install -m 0644 "$AOS_REPO_DIR/caddy-auth.conf" /etc/fail2ban/filter.d/caddy-auth.conf
-fi
-systemctl enable --now fail2ban
-
-# Unattended upgrades
-log "Enabling unattended-upgrades"
-dpkg-reconfigure --priority=low unattended-upgrades || true
-cat >/etc/apt/apt.conf.d/51aos-unattended.conf <<'EOF'
-Unattended-Upgrade::Automatic-Reboot "true";
-Unattended-Upgrade::Automatic-Reboot-Time "04:30";
+# Default response for undefined domains
+:80 {
+    respond "Server ready" 200
+}
 EOF
+    
+    # Enable and start Caddy
+    systemctl enable caddy
+    systemctl start caddy
+    
+    log_colored "Caddy installed and started"
+}
 
-# Caddy (vendor repo)
-if ! command -v caddy >/dev/null 2>&1; then
-  log "Installing Caddy"
-  apt-get install -y debian-keyring debian-archive-keyring
-  curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/gpg.key | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-  curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt | tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
-  apt-get update -y
-  apt-get install -y caddy
-else
-  log "Caddy already installed"
-fi
+# Install MariaDB
+install_mariadb() {
+    log_colored "Installing MariaDB"
+    
+    apt install -y mariadb-server mariadb-client
+    systemctl enable mariadb
+    systemctl start mariadb
+    
+    log_colored "MariaDB installed" "$YELLOW"
+    echo -e "${YELLOW}You must run 'mysql_secure_installation' after this script completes${NC}"
+}
 
-# Ensure Caddy log dir exists
-install -d -o caddy -g caddy -m 755 /var/log/caddy
+# Install PHP 8.4
+install_php() {
+    log_colored "Installing PHP 8.4"
+    
+    # Add Ondrej PHP repository for PHP 8.4
+    add-apt-repository -y ppa:ondrej/php
+    apt update -y
+    
+    # Install PHP 8.4 and extensions
+    apt install -y \
+        php8.4-fpm \
+        php8.4-mysql \
+        php8.4-curl \
+        php8.4-gd \
+        php8.4-intl \
+        php8.4-mbstring \
+        php8.4-xml \
+        php8.4-xmlrpc \
+        php8.4-soap \
+        php8.4-zip \
+        php8.4-cli \
+        php8.4-opcache \
+        php8.4-readline \
+        php8.4-common \
+        php8.4-bcmath
+    
+    # Configure PHP-FPM for WordPress
+    cat > /etc/php/8.4/fpm/pool.d/wordpress.conf << 'EOF'
+[wordpress]
+user = www-data
+group = www-data
+listen = /run/php/php8.4-fpm.sock
+listen.owner = www-data
+listen.group = www-data
+listen.mode = 0660
 
-# PHP-FPM tuning for 4GB node
-log "Tuning PHP-FPM"
-PHP_INI=/etc/php/8.2/fpm/php.ini
-POOL_CONF=/etc/php/8.2/fpm/pool.d/www.conf
-sed -i 's/^;*opcache.enable=.*/opcache.enable=1/' "$PHP_INI"
-sed -i 's/^;*opcache.memory_consumption=.*/opcache.memory_consumption=128/' "$PHP_INI"
-sed -i 's/^;*opcache.max_accelerated_files=.*/opcache.max_accelerated_files=10000/' "$PHP_INI"
-sed -i 's/^;*cgi.fix_pathinfo=.*/cgi.fix_pathinfo=0/' "$PHP_INI"
-# realpath cache helps Grav/Composer autoloaders
-if ! grep -q '^realpath_cache_size' "$PHP_INI"; then echo 'realpath_cache_size = 4096k' >> "$PHP_INI"; else sed -i 's/^;*realpath_cache_size.*/realpath_cache_size = 4096k/' "$PHP_INI"; fi
-if ! grep -q '^realpath_cache_ttl' "$PHP_INI"; then echo 'realpath_cache_ttl = 600' >> "$PHP_INI"; else sed -i 's/^;*realpath_cache_ttl.*/realpath_cache_ttl = 600/' "$PHP_INI"; fi
-# FPM pool (conservative)
-sed -i 's/^pm = .*/pm = dynamic/' "$POOL_CONF"
-sed -i 's/^pm.max_children = .*/pm.max_children = 12/' "$POOL_CONF"
-sed -i 's/^pm.start_servers = .*/pm.start_servers = 3/' "$POOL_CONF"
-sed -i 's/^pm.min_spare_servers = .*/pm.min_spare_servers = 2/' "$POOL_CONF"
-sed -i 's/^pm.max_spare_servers = .*/pm.max_spare_servers = 6/' "$POOL_CONF"
-systemctl enable --now php8.2-fpm
+pm = dynamic
+pm.max_children = 20
+pm.start_servers = 4
+pm.min_spare_servers = 2
+pm.max_spare_servers = 8
+pm.max_requests = 1000
 
-# Standard directories
-log "Creating standard directories"
-ensure_dir "$SITES_DIR" 755
-ensure_dir "$BACKUP_DIR" 750
-# Forms log dir: group www-data, setgid so new files inherit group
-install -d -m 2750 -o root -g www-data "$FORM_LOG_DIR"
-# Rate limit cache for form handler
-install -d -m 2770 -o root -g www-data "$RATE_CACHE_DIR"
-chown -R "$WWW_USER:$WWW_GROUP" "$SITES_DIR"
-chown -R root:root "$BACKUP_DIR"
+; WordPress specific settings
+php_admin_value[memory_limit] = 512M
+php_admin_value[upload_max_filesize] = 128M
+php_admin_value[post_max_size] = 128M
+php_admin_value[max_execution_time] = 300
+php_admin_value[max_input_vars] = 3000
+EOF
+    
+    # Optimize PHP.ini for WordPress
+    PHP_INI="/etc/php/8.4/fpm/php.ini"
+    sed -i 's/;opcache.enable=1/opcache.enable=1/' "$PHP_INI"
+    sed -i 's/;opcache.memory_consumption=128/opcache.memory_consumption=256/' "$PHP_INI"
+    sed -i 's/;opcache.max_accelerated_files=10000/opcache.max_accelerated_files=10000/' "$PHP_INI"
+    sed -i 's/;opcache.validate_timestamps=1/opcache.validate_timestamps=0/' "$PHP_INI"
+    sed -i 's/;opcache.revalidate_freq=2/opcache.revalidate_freq=0/' "$PHP_INI"
+    
+    # Enable and start PHP-FPM
+    systemctl enable php8.4-fpm
+    systemctl start php8.4-fpm
+    
+    log_colored "PHP 8.4 installed and configured"
+}
 
-# Deploy Caddyfile template if present
-log "Deploying Caddyfile template (if present)"
-if [[ -f "$AOS_REPO_DIR/caddyfile.template" ]]; then
-  install -m 0644 "$AOS_REPO_DIR/caddyfile.template" /etc/caddy/Caddyfile
-  if caddy validate --config /etc/caddy/Caddyfile; then
-    systemctl enable --now caddy
-    systemctl reload caddy || true
-  else
-    log "WARNING: Caddyfile validation failed; leaving current config in place"
-  fi
-fi
+# Install WP-CLI
+install_wp_cli() {
+    log_colored "Installing WP-CLI"
+    
+    curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+    chmod +x wp-cli.phar
+    mv wp-cli.phar /usr/local/bin/wp
+    
+    # Verify installation
+    if wp --info --allow-root >/dev/null 2>&1; then
+        log_colored "WP-CLI installed successfully"
+    else
+        log_colored "WP-CLI installation failed" "$RED"
+        exit 1
+    fi
+}
 
-# Install form handler and secrets template if present
-log "Installing form handler and secrets (if present)"
-if [[ -f "$AOS_REPO_DIR/form-handler.php" ]]; then
-  install -m 0644 "$AOS_REPO_DIR/form-handler.php" "$SITES_DIR"/form-handler.php
-  chown "$WWW_USER:$WWW_GROUP" "$SITES_DIR"/form-handler.php
-fi
-if [[ -f "$AOS_REPO_DIR/form-secrets.template" ]]; then
-  install -m 0640 "$AOS_REPO_DIR/form-secrets.template" /etc/aos-form-secrets
-  chgrp "$WWW_GROUP" /etc/aos-form-secrets || true
-fi
+# Configure UFW firewall
+setup_firewall() {
+    log_colored "Configuring UFW firewall"
+    
+    ufw --force reset
+    ufw default deny incoming
+    ufw default allow outgoing
+    
+    # Allow SSH, HTTP, HTTPS
+    ufw allow 22/tcp
+    ufw allow 80/tcp
+    ufw allow 443/tcp
+    
+    ufw --force enable
+    
+    log_colored "UFW firewall configured"
+}
 
-# Logrotate for Caddy rotated files
-if [[ -f "$AOS_REPO_DIR/logrotate-caddy-sites" ]]; then
-  log "Installing logrotate policy for Caddy rotated logs"
-  install -m 0644 "$AOS_REPO_DIR/logrotate-caddy-sites" /etc/logrotate.d/caddy-sites
-fi
+# Configure Fail2ban
+setup_fail2ban() {
+    log_colored "Configuring Fail2ban"
+    
+    # Create local jail configuration
+    cat > /etc/fail2ban/jail.local << 'EOF'
+[DEFAULT]
+bantime = 3600
+findtime = 600
+maxretry = 5
+backend = systemd
 
-# Expose helper scripts in PATH (symlinks)
-log "Linking management scripts into $SCRIPT_BIN_DIR"
-install -d -m 755 "$SCRIPT_BIN_DIR"
-ln -sf "$AOS_REPO_DIR/create-site.sh"    "$SCRIPT_BIN_DIR/create-site"
-ln -sf "$AOS_REPO_DIR/backup-sites.sh"   "$SCRIPT_BIN_DIR/backup-sites"
-ln -sf "$AOS_REPO_DIR/server-update.sh"  "$SCRIPT_BIN_DIR/server-update"
-ln -sf "$AOS_REPO_DIR/server-monitor.sh" "$SCRIPT_BIN_DIR/server-monitor"
+[sshd]
+enabled = true
+port = ssh
+logpath = %(sshd_log)s
+maxretry = 3
+bantime = 7200
+EOF
+    
+    systemctl enable fail2ban
+    systemctl start fail2ban
+    
+    log_colored "Fail2ban configured"
+}
 
-# Install helper: aos-reload-safe
-log "Installing helper script: aos-reload-safe"
-cat >/usr/local/sbin/aos-reload-safe <<'EOS'
+# Configure automatic security updates
+setup_auto_updates() {
+    log_colored "Configuring automatic security updates"
+    
+    # Configure unattended-upgrades
+    cat > /etc/apt/apt.conf.d/20auto-upgrades << 'EOF'
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+APT::Periodic::AutocleanInterval "7";
+EOF
+    
+    cat > /etc/apt/apt.conf.d/50unattended-upgrades << 'EOF'
+Unattended-Upgrade::Allowed-Origins {
+    "${distro_id}:${distro_codename}-security";
+    "${distro_id}ESMApps:${distro_codename}-apps-security";
+    "${distro_id}ESM:${distro_codename}-infra-security";
+};
+
+Unattended-Upgrade::Remove-Unused-Dependencies "true";
+Unattended-Upgrade::Automatic-Reboot "false";
+EOF
+    
+    systemctl enable unattended-upgrades
+    systemctl start unattended-upgrades
+    
+    log_colored "Automatic security updates configured"
+}
+
+# Harden SSH
+harden_ssh() {
+    log_colored "Hardening SSH configuration"
+    
+    # Backup original config
+    cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup
+    
+    # Apply security settings
+    sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+    sed -i 's/#PermitRootLogin yes/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+    sed -i 's/X11Forwarding yes/X11Forwarding no/' /etc/ssh/sshd_config
+    
+    # Add additional security settings
+    cat >> /etc/ssh/sshd_config << 'EOF'
+
+# Additional security settings
+ClientAliveInterval 300
+ClientAliveCountMax 2
+MaxAuthTries 3
+MaxSessions 2
+Protocol 2
+EOF
+    
+    # Test SSH config and restart
+    sshd -t
+    systemctl restart sshd
+    
+    log_colored "SSH hardened" "$YELLOW"
+    echo -e "${YELLOW}WARNING: Password authentication is now disabled. Ensure you have SSH keys configured!${NC}"
+}
+
+# Set up daily backup script
+setup_backup_script() {
+    log_colored "Setting up backup automation"
+    
+    cat > /usr/local/bin/backup-wordpress << 'EOF'
 #!/bin/bash
-set -euo pipefail
-trap 'echo "ERROR: failed at line $LINENO" >&2' ERR
+# Daily WordPress backup script
 
-echo "Applying sysctl..."
-sysctl --system >/dev/null
+BACKUP_DIR="/backups/wordpress"
+SITES_DIR="/var/www"
+DATE=$(date +%Y%m%d_%H%M%S)
+RETENTION_DAYS=7
 
-echo "Validating Caddyfile..."
-if ! caddy validate --config /etc/caddy/Caddyfile; then
-  echo "Caddyfile invalid. Aborting reload." >&2
-  exit 1
-fi
+# Create backup directory if it doesn't exist
+mkdir -p "$BACKUP_DIR"
 
-echo "Reloading services..."
-systemctl reload caddy
-systemctl try-restart php8.2-fpm fail2ban >/dev/null
-systemctl restart systemd-timesyncd >/dev/null
+# Backup each WordPress site
+for site_dir in "$SITES_DIR"/*; do
+    if [[ -d "$site_dir" && -f "$site_dir/wp-config.php" ]]; then
+        site_name=$(basename "$site_dir")
+        
+        echo "Backing up $site_name..."
+        
+        # Backup database
+        wp db export "$BACKUP_DIR/${site_name}_db_${DATE}.sql" --path="$site_dir" --allow-root
+        gzip "$BACKUP_DIR/${site_name}_db_${DATE}.sql"
+        
+        # Backup files
+        tar -czf "$BACKUP_DIR/${site_name}_files_${DATE}.tar.gz" -C "$SITES_DIR" "$site_name"
+        
+        # Clean old backups
+        find "$BACKUP_DIR" -name "${site_name}_*" -mtime +$RETENTION_DAYS -delete
+    fi
+done
 
-echo "Checking timers..."
-systemctl list-timers --all | grep aos- || true
-
-echo "Done."
-EOS
-chmod 0755 /usr/local/sbin/aos-reload-safe
-
-# Systemd units and timers
-log "Creating systemd services and timers"
-cat >/etc/systemd/system/aos-backup.service <<EOF
-[Unit]
-Description=AOS site backups
-[Service]
-Type=oneshot
-ExecStart=$SCRIPT_BIN_DIR/backup-sites
+echo "Backup completed: $(date)"
 EOF
+    
+    chmod +x /usr/local/bin/backup-wordpress
+    
+    # Add cron job for daily backups at 2 AM
+    (crontab -l 2>/dev/null; echo "0 2 * * * /usr/local/bin/backup-wordpress >> /var/log/backup.log 2>&1") | crontab -
+    
+    log_colored "Backup automation configured"
+}
 
-cat >/etc/systemd/system/aos-backup.timer <<'EOF'
-[Unit]
-Description=Run AOS site backups daily at 02:00
-[Timer]
-OnCalendar=*-*-* 02:00:00
-Persistent=true
-[Install]
-WantedBy=timers.target
+# Final system optimizations
+optimize_system() {
+    log_colored "Applying system optimizations"
+    
+    # Kernel parameters for web server
+    cat >> /etc/sysctl.conf << 'EOF'
+
+# WordPress server optimizations
+net.core.rmem_max = 16777216
+net.core.wmem_max = 16777216
+net.ipv4.tcp_rmem = 4096 65536 16777216
+net.ipv4.tcp_wmem = 4096 65536 16777216
+net.ipv4.tcp_congestion_control = bbr
+net.core.default_qdisc = fq
 EOF
+    
+    sysctl -p
+    
+    log_colored "System optimizations applied"
+}
 
-cat >/etc/systemd/system/aos-update.service <<EOF
-[Unit]
-Description=AOS weekly server update
-[Service]
-Type=oneshot
-ExecStart=$SCRIPT_BIN_DIR/server-update
-EOF
+# Print final status and next steps
+print_summary() {
+    log_colored "Server setup completed successfully!" "$GREEN"
+    
+    echo -e "\n${GREEN}=== SERVER SETUP COMPLETE ===${NC}"
+    echo -e "${GREEN}Caddy:${NC} Installed and running"
+    echo -e "${GREEN}MariaDB:${NC} Installed (run mysql_secure_installation)"
+    echo -e "${GREEN}PHP 8.4:${NC} Installed with FPM"
+    echo -e "${GREEN}WP-CLI:${NC} Ready for WordPress installations"
+    echo -e "${GREEN}Firewall:${NC} UFW enabled (ports 22, 80, 443)"
+    echo -e "${GREEN}Security:${NC} Fail2ban active, SSH hardened"
+    echo -e "${GREEN}Backups:${NC} Daily backups configured"
+    
+    echo -e "\n${YELLOW}NEXT STEPS:${NC}"
+    echo -e "1. Run: ${GREEN}mysql_secure_installation${NC}"
+    echo -e "2. Install WordPress management scripts"
+    echo -e "3. Create your first site: ${GREEN}wp-install domain.com${NC}"
+    
+    echo -e "\n${YELLOW}IMPORTANT FILES:${NC}"
+    echo -e "Caddy config: /etc/caddy/Caddyfile"
+    echo -e "Sites directory: $SITES_DIR"
+    echo -e "Backups directory: $BACKUP_DIR"
+    echo -e "Setup log: $LOG_FILE"
+}
 
-cat >/etc/systemd/system/aos-update.timer <<'EOF'
-[Unit]
-Description=Run AOS server updates weekly Sun 04:00
-[Timer]
-OnCalendar=Sun *-*-* 04:00:00
-Persistent=true
-[Install]
-WantedBy=timers.target
-EOF
+# Main execution
+main() {
+    log_colored "Starting WordPress server setup" "$GREEN"
+    
+    require_root
+    check_ubuntu
+    setup_directories
+    update_system
+    setup_timezone
+    setup_swap
+    install_caddy
+    install_mariadb
+    install_php
+    install_wp_cli
+    setup_firewall
+    setup_fail2ban
+    setup_auto_updates
+    harden_ssh
+    setup_backup_script
+    optimize_system
+    print_summary
+    
+    log_colored "All tasks completed successfully!" "$GREEN"
+}
 
-cat >/etc/systemd/system/aos-monitor.service <<EOF
-[Unit]
-Description=AOS server monitor
-[Service]
-Type=oneshot
-ExecStart=$SCRIPT_BIN_DIR/server-monitor
-EOF
-
-cat >/etc/systemd/system/aos-monitor.timer <<'EOF'
-[Unit]
-Description=Run AOS monitor every 15 minutes
-[Timer]
-OnCalendar=*:0/15
-Persistent=true
-[Install]
-WantedBy=timers.target
-EOF
-
-systemctl daemon-reload
-systemctl enable --now aos-backup.timer aos-update.timer aos-monitor.timer
-
-# Kernel/network hardening (safe defaults)
-log "Applying basic sysctl hardening"
-cat >/etc/sysctl.d/60-aos-hardening.conf <<'EOF'
-net.ipv4.conf.all.rp_filter = 1
-net.ipv4.conf.default.rp_filter = 1
-net.ipv4.tcp_syncookies = 1
-net.ipv4.conf.all.accept_redirects = 0
-net.ipv4.conf.default.accept_redirects = 0
-net.ipv4.conf.all.send_redirects = 0
-net.ipv4.conf.default.send_redirects = 0
-net.ipv6.conf.all.accept_redirects = 0
-net.ipv6.conf.default.accept_redirects = 0
-kernel.kptr_restrict = 2
-kernel.dmesg_restrict = 1
-EOF
-sysctl --system >/dev/null
-
-# Final verification
-log "Verifying services"
-systemctl is-active --quiet caddy && log "Caddy active"
-systemctl is-active --quiet php8.2-fpm && log "PHP-FPM active"
-systemctl is-enabled --quiet aos-backup.timer && log "Backup timer enabled"
-systemctl is-enabled --quiet aos-update.timer && log "Update timer enabled"
-systemctl is-enabled --quiet aos-monitor.timer && log "Monitor timer enabled"
-
-echo "Setup complete."
-echo "Sites: $SITES_DIR"
-echo "Backups: $BACKUP_DIR"
-echo "Form logs: $FORM_LOG_DIR"
-echo "Scripts in PATH: create-site, backup-sites, server-update, server-monitor, aos-reload-safe"
+# Run main function
+main "$@"
