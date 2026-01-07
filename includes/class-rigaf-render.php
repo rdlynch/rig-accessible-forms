@@ -22,7 +22,11 @@ class Render {
         foreach ( $fields as $f ) {
             $type=$f['type']??'text'; $name=sanitize_key($f['name']); $label=$f['label']??ucfirst($name); $required=!empty($f['required']); $placeholder=$f['placeholder']??''; $help=$f['help']??''; $options=(isset($f['options']) && is_array($f['options']))?$f['options']:[];
             $field_id=$name; $describedby=$name.'_help'; $err_id=$name.'_error'; $has_error=isset($errors[$name]); $value=isset($old[$name]) ? wp_kses_post($old[$name]) : '';
-            echo '<div class="rigaf-field'.( $has_error ? ' rigaf-has-error' : '' ).'">';
+            $conditional_attr = '';
+            if ( isset($f['conditional']) && is_array($f['conditional']) ) {
+                $conditional_attr = ' data-conditional="' . esc_attr( wp_json_encode( $f['conditional'] ) ) . '"';
+            }
+            echo '<div class="rigaf-field'.( $has_error ? ' rigaf-has-error' : '' ).'"' . $conditional_attr . '>';
             switch($type){
                 case 'checkbox':
                     echo '<div class="rigaf-checkbox">'; printf('<input type="checkbox" id="%1$s" name="%2$s" value="1" %3$s aria-describedby="%4$s" %5$s/>', esc_attr($field_id), esc_attr($name), checked($value,'1',false), esc_attr($describedby), $required?'aria-required="true" required':'' ); printf('<label for="%1$s">%2$s%3$s</label>', esc_attr($field_id), esc_html($label), $required?' '.esc_html__('(required)','rigaf'):'' ); echo '</div>'; break;

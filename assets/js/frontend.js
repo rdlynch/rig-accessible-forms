@@ -39,6 +39,9 @@
 
         // Add ARIA live region for dynamic announcements
         addLiveRegion(form);
+
+        // Initialize conditional logic
+        initConditionalLogic(form);
     }
 
     /**
@@ -518,6 +521,171 @@
         // Check if it's a valid date
         const d = new Date(date);
         return d instanceof Date && !isNaN(d);
+    }
+
+    /**
+     * Initialize conditional logic for form fields
+     */
+    function initConditionalLogic(form) {
+        // Get all fields with data-conditional attribute
+        const conditionalFields = form.querySelectorAll('[data-conditional]');
+
+        if (conditionalFields.length === 0) {
+            return; // No conditional logic configured
+        }
+
+        // Build conditional rules map
+        const rules = [];
+        conditionalFields.forEach(function(fieldContainer) {
+            try {
+                const conditionalData = JSON.parse(fieldContainer.getAttribute('data-conditional'));
+                rules.push({
+                    container: fieldContainer,
+                    rule: conditionalData
+                });
+            } catch (e) {
+                // Invalid JSON, skip this field
+                return;
+            }
+        });
+
+        if (rules.length === 0) {
+            return;
+        }
+
+        // Listen for changes on all form inputs
+        const allInputs = form.querySelectorAll('input, select, textarea');
+        allInputs.forEach(function(input) {
+            input.addEventListener('change', function() {
+                evaluateConditionalRules(rules);
+            });
+        });
+
+        // Initial evaluation
+        evaluateConditionalRules(rules);
+    }
+
+    /**
+     * Evaluate all conditional rules
+     */
+    function evaluateConditionalRules(rules) {
+        rules.forEach(function(item) {
+            const shouldShow = evaluateCondition(item.rule);
+            toggleFieldVisibility(item.container, shouldShow);
+        });
+    }
+
+    /**
+     * Evaluate a single conditional rule
+     */
+    function evaluateCondition(rule) {
+        const field = document.querySelector('[name="' + rule.field + '"]');
+        if (!field) {
+            return false; // Field not found, hide by default
+        }
+
+        let fieldValue = getFieldValue(field);
+        const compareValue = rule.value;
+        const operator = rule.operator || '==';
+
+        // Handle different operators
+        switch (operator) {
+            case '==':
+            case 'equals':
+                return String(fieldValue) === String(compareValue);
+
+            case '!=':
+            case 'not_equals':
+                return String(fieldValue) !== String(compareValue);
+
+            case 'contains':
+                return String(fieldValue).indexOf(String(compareValue)) !== -1;
+
+            case 'not_contains':
+                return String(fieldValue).indexOf(String(compareValue)) === -1;
+
+            case '>':
+            case 'greater_than':
+                return parseFloat(fieldValue) > parseFloat(compareValue);
+
+            case '>=':
+            case 'greater_or_equal':
+                return parseFloat(fieldValue) >= parseFloat(compareValue);
+
+            case '<':
+            case 'less_than':
+                return parseFloat(fieldValue) < parseFloat(compareValue);
+
+            case '<=':
+            case 'less_or_equal':
+                return parseFloat(fieldValue) <= parseFloat(compareValue);
+
+            case 'empty':
+                return !fieldValue || fieldValue === '';
+
+            case 'not_empty':
+                return fieldValue && fieldValue !== '';
+
+            default:
+                return false;
+        }
+    }
+
+    /**
+     * Get value from a form field (handles checkboxes, radios, etc.)
+     */
+    function getFieldValue(field) {
+        if (field.type === 'checkbox') {
+            return field.checked ? field.value : '';
+        } else if (field.type === 'radio') {
+            const checked = document.querySelector('[name="' + field.name + '"]:checked');
+            return checked ? checked.value : '';
+        } else if (field.tagName === 'SELECT' && field.multiple) {
+            const selected = [];
+            for (let i = 0; i < field.options.length; i++) {
+                if (field.options[i].selected) {
+                    selected.push(field.options[i].value);
+                }
+            }
+            return selected.join(',');
+        } else {
+            return field.value;
+        }
+    }
+
+    /**
+     * Toggle field visibility with accessibility
+     */
+    function toggleFieldVisibility(container, show) {
+        if (show) {
+            container.style.display = '';
+            container.removeAttribute('aria-hidden');
+
+            // Re-enable fields
+            const inputs = container.querySelectorAll('input, select, textarea');
+            inputs.forEach(function(input) {
+                input.removeAttribute('disabled');
+            });
+        } else {
+            container.style.display = 'none';
+            container.setAttribute('aria-hidden', 'true');
+
+            // Disable and clear fields
+            const inputs = container.querySelectorAll('input, select, textarea');
+            inputs.forEach(function(input) {
+                input.setAttribute('disabled', 'disabled');
+
+                // Clear value of hidden fields
+                if (input.type === 'checkbox' || input.type === 'radio') {
+                    input.checked = false;
+                } else {
+                    input.value = '';
+                }
+
+                // Clear validation errors
+                clearFieldError(input);
+            });
+        }
     }
 
 })();

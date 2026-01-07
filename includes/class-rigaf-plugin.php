@@ -10,7 +10,6 @@ class Plugin {
     public static function instance() { if ( null === self::$instance ) { self::$instance = new self(); } return self::$instance; }
     public function __construct() {
         add_action( 'init', [ $this, 'register_assets' ] );
-        add_action( 'init', [ $this, 'register_shortcodes' ] );
         add_action( 'init', [ $this, 'register_cpts' ] );
         add_action( 'init', [ $this, 'register_block' ] );
         add_action( 'admin_enqueue_scripts', [ $this, 'admin_a11y_styles' ] );
@@ -40,7 +39,6 @@ class Plugin {
     public function admin_a11y_styles( $hook ) {
         wp_add_inline_style( 'wp-admin', '.rigaf-help{display:block;margin-top:4px;color:#444;} .rigaf-textarea{width:100%;max-width:700px;} .rigaf-label{font-weight:600;} .rigaf-table input, .rigaf-table select, .rigaf-table textarea{width:100%;} .rigaf-actions .button{margin-right:6px} .rigaf-kb-controls button{margin-right:4px}' );
     }
-    public function register_shortcodes() { add_shortcode( 'rigaf_form', [ $this, 'shortcode_form' ] ); }
     public function register_cpts() { \RIGAF\Form_CPT::register(); }
 
     /**
@@ -99,13 +97,6 @@ class Plugin {
         return \RIGAF\Render::form( $form_id );
     }
 
-    public function shortcode_form( $atts ) {
-        $atts = shortcode_atts( [ 'id' => 0 ], $atts, 'rigaf_form' );
-        $form_id = absint( $atts['id'] );
-        if ( ! $form_id ) return '';
-        wp_enqueue_style( 'rigaf-frontend' ); wp_enqueue_script( 'rigaf-frontend' );
-        return \RIGAF\Render::form( $form_id );
-    }
     public function handle_submit() {
         if ( ! isset( $_POST['rigaf_nonce'] ) || ! wp_verify_nonce( $_POST['rigaf_nonce'], 'rigaf_submit' ) ) { wp_die( __( 'Invalid request.', 'rigaf' ), 400 ); }
         $form_id = isset( $_POST['rigaf_form_id'] ) ? absint( $_POST['rigaf_form_id'] ) : 0;
@@ -282,8 +273,8 @@ class Plugin {
         echo '<div class="wrap"><h1>'. esc_html__('Accessible Builder', 'rigaf') .'</h1><p>'. esc_html__('Use the keyboard to reorder fields. Each row has Move Up and Move Down buttons.', 'rigaf') .'</p>';
         echo '<form method="post" action="'. esc_url( admin_url('admin-post.php') ) .'">'; wp_nonce_field('rigaf_save_builder', 'rigaf_save_builder_nonce');
         echo '<input type="hidden" name="action" value="rigaf_save_builder" /><input type="hidden" name="form_id" value="'. esc_attr($form_id) .'" />';
-        echo '<table class="widefat rigaf-table" role="grid" aria-label="Form fields"><thead><tr><th>'.esc_html__('Type','rigaf').'</th><th>'.esc_html__('Name','rigaf').'</th><th>'.esc_html__('Label','rigaf').'</th><th>'.esc_html__('Required','rigaf').'</th><th>'.esc_html__('Options (JSON)','rigaf').'</th><th>'.esc_html__('Help','rigaf').'</th><th>'.esc_html__('Actions','rigaf').'</th></tr></thead><tbody id="rigaf-rows">';
-        $i=0; foreach($fields as $f){ $type=$f['type']??'text'; $name=$f['name']??''; $label=$f['label']??''; $req=!empty($f['required'])?1:0; $opts=isset($f['options'])?wp_json_encode($f['options']):''; $help=$f['help']??'';
+        echo '<table class="widefat rigaf-table" role="grid" aria-label="Form fields"><thead><tr><th>'.esc_html__('Type','rigaf').'</th><th>'.esc_html__('Name','rigaf').'</th><th>'.esc_html__('Label','rigaf').'</th><th>'.esc_html__('Required','rigaf').'</th><th>'.esc_html__('Options (JSON)','rigaf').'</th><th>'.esc_html__('Help','rigaf').'</th><th>'.esc_html__('Conditional (JSON)','rigaf').'</th><th>'.esc_html__('Actions','rigaf').'</th></tr></thead><tbody id="rigaf-rows">';
+        $i=0; foreach($fields as $f){ $type=$f['type']??'text'; $name=$f['name']??''; $label=$f['label']??''; $req=!empty($f['required'])?1:0; $opts=isset($f['options'])?wp_json_encode($f['options']):''; $help=$f['help']??''; $cond=isset($f['conditional'])?wp_json_encode($f['conditional']):'';
             echo '<tr>';
             printf('<td><select name="fields[%1$d][type]">%2$s</select></td>', $i, self::options_html($type));
             printf('<td><input aria-label="Field name row %1$d" name="fields[%1$d][name]" value="%2$s"/></td>', $i, esc_attr($name));
@@ -291,6 +282,7 @@ class Plugin {
             printf('<td><input type="checkbox" aria-label="Required row %1$d" name="fields[%1$d][required]" value="1" %2$s/></td>', $i, checked($req,1,false));
             printf('<td><textarea aria-label="Options row %1$d" name="fields[%1$d][options]" rows="2">%2$s</textarea></td>', $i, esc_textarea($opts));
             printf('<td><input aria-label="Help row %1$d" name="fields[%1$d][help]" value="%2$s"/></td>', $i, esc_attr($help));
+            printf('<td><textarea aria-label="Conditional row %1$d" name="fields[%1$d][conditional]" rows="2" placeholder="%3$s">%2$s</textarea></td>', $i, esc_textarea($cond), esc_attr('{"field":"fieldname","operator":"==","value":"somevalue"}'));
             echo '<td class="rigaf-actions"><div class="rigaf-kb-controls">';
             echo '<button name="move" value="up:'.$i.'" class="button" aria-label="Move row '.$i.' up">'.esc_html__('Move Up','rigaf').'</button>';
             echo '<button name="move" value="down:'.$i.'" class="button" aria-label="Move row '.$i.' down">'.esc_html__('Move Down','rigaf').'</button>';
@@ -304,6 +296,7 @@ class Plugin {
         printf('<td><input type="checkbox" aria-label="New field required" name="fields[%1$d][required]" value="1"/></td>', $i);
         printf('<td><textarea aria-label="New field options" name="fields[%1$d][options]" rows="2"></textarea></td>', $i);
         printf('<td><input aria-label="New field help" name="fields[%1$d][help]" value=""/></td>', $i);
+        printf('<td><textarea aria-label="New field conditional" name="fields[%1$d][conditional]" rows="2" placeholder="%2$s"></textarea></td>', $i, esc_attr('{"field":"fieldname","operator":"==","value":"somevalue"}'));
         echo '<td></td></tr>';
         echo '</tbody></table>'; submit_button( __('Save Fields','rigaf') ); echo '</form></div>';
     }
@@ -316,6 +309,7 @@ class Plugin {
             if ( empty($f['name']) ) continue;
             $row = ['type'=>sanitize_text_field($f['type']),'name'=>sanitize_key($f['name']),'label'=>sanitize_text_field($f['label']),'required'=>!empty($f['required']),'help'=>sanitize_text_field($f['help'])];
             if ( ! empty($f['options']) ) { $opts = json_decode( wp_unslash( $f['options'] ), true ); if ( json_last_error() === JSON_ERROR_NONE && is_array($opts) ) { $row['options'] = $opts; } }
+            if ( ! empty($f['conditional']) ) { $cond = json_decode( wp_unslash( $f['conditional'] ), true ); if ( json_last_error() === JSON_ERROR_NONE && is_array($cond) ) { $row['conditional'] = $cond; } }
             $clean[] = $row;
         }
         update_post_meta( $form_id, '_rigaf_fields', wp_json_encode( $clean ) ); wp_safe_redirect( admin_url('admin.php?page=rigaf_builder&form_id='.$form_id.'&saved=1') ); exit;

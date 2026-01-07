@@ -3,7 +3,7 @@ Contributors: ruralimpactgroup
 Tags: forms, accessibility, wcag, contact form, accessible
 Requires at least: 5.8
 Tested up to: 6.4
-Stable tag: 0.3.0
+Stable tag: 0.4.0
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -17,6 +17,7 @@ RIG Accessible Forms is a WordPress plugin designed specifically for accessibili
 **Key Features:**
 
 * **Gutenberg Block** - Modern block editor integration with live preview
+* **Conditional Logic** - Show/hide fields based on user selections
 * **Accessible Form Builder** - Keyboard-accessible admin interface
 * **Multiple Field Types** - Text, email, tel, textarea, select, radio, checkbox groups, date, file upload, address
 * **Client-Side Validation** - Progressive enhancement with accessible error handling
@@ -61,14 +62,24 @@ RIG Accessible Forms is a WordPress plugin designed specifically for accessibili
 4. Preview appears automatically in the editor
 5. Publish your page
 
-**Shortcode (Legacy):**
+**Using Conditional Logic:**
 
-For backward compatibility, you can still use the shortcode:
-`[rigaf_form id="123"]`
-
-Note: Shortcodes are deprecated in favor of blocks. Please migrate to the block editor.
+1. In the Form Builder, find the "Conditional (JSON)" column
+2. Enter a JSON object like: `{"field":"contact_method","operator":"==","value":"email"}`
+3. The field will only show when the specified condition is met
+4. Supports operators: ==, !=, >, >=, <, <=, contains, not_contains, empty, not_empty
 
 == Changelog ==
+
+= 0.4.0 =
+* **Added conditional logic** - Show/hide fields based on user selections
+* Removed deprecated shortcode functionality (block editor only)
+* Added 10+ operators for conditional rules (==, !=, >, <, contains, empty, etc.)
+* Conditional fields automatically disabled and cleared when hidden
+* Added data-conditional attribute support in form rendering
+* Enhanced builder UI with Conditional (JSON) column
+* Improved accessibility with aria-hidden on conditional fields
+* Full screen reader support for dynamic field visibility
 
 = 0.3.0 =
 * Added Gutenberg block with live preview
