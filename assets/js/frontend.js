@@ -42,6 +42,9 @@
 
         // Initialize conditional logic
         initConditionalLogic(form);
+
+        // Initialize calculation fields
+        initCalculationFields(form);
     }
 
     /**
@@ -202,6 +205,55 @@
                 const fileError = validateFileInput(field);
                 if (fileError) {
                     errorMessage = fileError;
+                }
+            }
+
+            // Advanced validation rules
+            // Custom regex pattern validation
+            if (!errorMessage && field.hasAttribute('data-custom-pattern')) {
+                const pattern = field.getAttribute('data-custom-pattern');
+                try {
+                    const regex = new RegExp(pattern);
+                    if (!regex.test(field.value)) {
+                        errorMessage = field.getAttribute('data-custom-pattern-message') ||
+                                     'This field does not match the required format.';
+                    }
+                } catch (e) {
+                    // Invalid regex pattern, skip
+                }
+            }
+
+            // Min length validation
+            if (!errorMessage && field.hasAttribute('data-min-length')) {
+                const minLength = parseInt(field.getAttribute('data-min-length'), 10);
+                if (!isNaN(minLength) && field.value.length < minLength) {
+                    errorMessage = 'This field must be at least ' + minLength + ' characters long.';
+                }
+            }
+
+            // Max length validation
+            if (!errorMessage && field.hasAttribute('data-max-length')) {
+                const maxLength = parseInt(field.getAttribute('data-max-length'), 10);
+                if (!isNaN(maxLength) && field.value.length > maxLength) {
+                    errorMessage = 'This field must not exceed ' + maxLength + ' characters.';
+                }
+            }
+
+            // Min value validation (for numeric fields)
+            if (!errorMessage && field.hasAttribute('data-min-value')) {
+                const minValue = parseFloat(field.getAttribute('data-min-value'));
+                const fieldValue = parseFloat(field.value);
+                if (!isNaN(minValue) && !isNaN(fieldValue) && fieldValue < minValue) {
+                    errorMessage = 'This value must be at least ' + field.getAttribute('data-min-value') + '.';
+                }
+            }
+
+            // Max value validation (for numeric fields)
+            if (!errorMessage && field.hasAttribute('data-max-value')) {
+                const maxValue = parseFloat(field.getAttribute('data-max-value'));
+                const fieldValue = parseFloat(field.value);
+                if (!isNaN(maxValue) && !isNaN(fieldValue) && fieldValue > maxValue) {
+                    errorMessage = 'This value must not exceed ' + field.getAttribute('data-max-value') + '.';
                 }
             }
         }
@@ -686,6 +738,127 @@
                 clearFieldError(input);
             });
         }
+    }
+
+    /**
+     * Initialize calculation fields
+     */
+    function initCalculationFields(form) {
+        // Get all calculated fields
+        const calculatedFields = form.querySelectorAll('[data-calculation]');
+
+        if (calculatedFields.length === 0) {
+            return; // No calculation fields configured
+        }
+
+        // Build calculation rules map
+        const calculations = [];
+        calculatedFields.forEach(function(calcField) {
+            const formula = calcField.getAttribute('data-calculation');
+            if (!formula) {
+                return;
+            }
+
+            // Extract field names from formula (matches word characters that could be field names)
+            const fieldNames = extractFieldNamesFromFormula(formula);
+
+            calculations.push({
+                field: calcField,
+                formula: formula,
+                dependencies: fieldNames
+            });
+        });
+
+        if (calculations.length === 0) {
+            return;
+        }
+
+        // Listen for changes on all form inputs
+        const allInputs = form.querySelectorAll('input, select, textarea');
+        allInputs.forEach(function(input) {
+            input.addEventListener('input', function() {
+                updateCalculations(calculations);
+            });
+            input.addEventListener('change', function() {
+                updateCalculations(calculations);
+            });
+        });
+
+        // Initial calculation
+        updateCalculations(calculations);
+    }
+
+    /**
+     * Extract field names from a calculation formula
+     */
+    function extractFieldNamesFromFormula(formula) {
+        // Match word characters (field names) but not numbers
+        const matches = formula.match(/\b[a-zA-Z_][a-zA-Z0-9_]*\b/g);
+        return matches || [];
+    }
+
+    /**
+     * Update all calculations
+     */
+    function updateCalculations(calculations) {
+        calculations.forEach(function(calc) {
+            const result = evaluateCalculation(calc.formula, calc.dependencies);
+            const previousValue = calc.field.value;
+
+            if (result !== null && !isNaN(result)) {
+                // Format to 2 decimal places if it's a decimal number
+                const formattedResult = Number.isInteger(result) ? result : result.toFixed(2);
+                calc.field.value = formattedResult;
+
+                // Announce to screen readers if value changed
+                if (previousValue !== formattedResult.toString()) {
+                    const label = getFieldLabel(calc.field);
+                    announceToScreenReader(label + ' calculated as ' + formattedResult);
+                }
+            } else {
+                calc.field.value = '';
+            }
+        });
+    }
+
+    /**
+     * Evaluate a calculation formula
+     */
+    function evaluateCalculation(formula, fieldNames) {
+        // Build a map of field values
+        const fieldValues = {};
+
+        fieldNames.forEach(function(fieldName) {
+            const field = document.querySelector('[name="' + fieldName + '"]');
+            if (field) {
+                const value = parseFloat(getFieldValue(field));
+                fieldValues[fieldName] = isNaN(value) ? 0 : value;
+            } else {
+                fieldValues[fieldName] = 0;
+            }
+        });
+
+        // Replace field names with their values in the formula
+        let evaluatedFormula = formula;
+        for (let fieldName in fieldValues) {
+            // Use word boundaries to avoid partial replacements
+            const regex = new RegExp('\\b' + fieldName + '\\b', 'g');
+            evaluatedFormula = evaluatedFormula.replace(regex, fieldValues[fieldName]);
+        }
+
+        // Safely evaluate the mathematical expression
+        try {
+            // Only allow mathematical operations for security
+            if (/^[0-9+\-*/(). ]+$/.test(evaluatedFormula)) {
+                // Use Function constructor for safe evaluation (better than eval)
+                return new Function('return ' + evaluatedFormula)();
+            }
+        } catch (e) {
+            // Invalid formula
+            return null;
+        }
+
+        return null;
     }
 
 })();

@@ -58,6 +58,52 @@ class Validator {
                 if ( $type === 'email' && ! is_email($str) ) { $errors[$name] = __('Enter a valid email address.','rigaf'); }
                 if ( $type === 'tel' && ! preg_match('/^[0-9\-\+\s\(\)]+$/', $str) ) { $errors[$name] = __('Enter a valid phone number.','rigaf'); }
                 if ( $type === 'date' && ! preg_match('/^\d{4}\-\d{2}\-\d{2}$/', $str) ) { $errors[$name] = __('Enter a valid date (YYYY-MM-DD).','rigaf'); }
+
+                // Advanced validation rules
+                // Custom regex pattern
+                if ( isset($f['custom_pattern']) && ! empty($f['custom_pattern']) ) {
+                    $pattern = $f['custom_pattern'];
+                    if ( @preg_match($pattern, '') === false ) {
+                        // Invalid regex pattern, skip
+                    } elseif ( ! preg_match($pattern, $str) ) {
+                        $custom_msg = isset($f['custom_pattern_message']) ? $f['custom_pattern_message'] : __('This field does not match the required format.','rigaf');
+                        $errors[$name] = $custom_msg;
+                    }
+                }
+
+                // Min length validation
+                if ( isset($f['min_length']) && is_numeric($f['min_length']) ) {
+                    $min = absint($f['min_length']);
+                    if ( mb_strlen($str, 'UTF-8') < $min ) {
+                        $errors[$name] = sprintf( __('This field must be at least %d characters long.','rigaf'), $min );
+                    }
+                }
+
+                // Max length validation
+                if ( isset($f['max_length']) && is_numeric($f['max_length']) ) {
+                    $max = absint($f['max_length']);
+                    if ( mb_strlen($str, 'UTF-8') > $max ) {
+                        $errors[$name] = sprintf( __('This field must not exceed %d characters.','rigaf'), $max );
+                    }
+                }
+
+                // Min value validation (for numeric fields)
+                if ( isset($f['min_value']) && is_numeric($f['min_value']) ) {
+                    $numeric_value = floatval($str);
+                    $min_val = floatval($f['min_value']);
+                    if ( is_numeric($str) && $numeric_value < $min_val ) {
+                        $errors[$name] = sprintf( __('This value must be at least %s.','rigaf'), $f['min_value'] );
+                    }
+                }
+
+                // Max value validation (for numeric fields)
+                if ( isset($f['max_value']) && is_numeric($f['max_value']) ) {
+                    $numeric_value = floatval($str);
+                    $max_val = floatval($f['max_value']);
+                    if ( is_numeric($str) && $numeric_value > $max_val ) {
+                        $errors[$name] = sprintf( __('This value must not exceed %s.','rigaf'), $f['max_value'] );
+                    }
+                }
             }
         }
         return $errors;

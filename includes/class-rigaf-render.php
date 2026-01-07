@@ -26,6 +26,26 @@ class Render {
             if ( isset($f['conditional']) && is_array($f['conditional']) ) {
                 $conditional_attr = ' data-conditional="' . esc_attr( wp_json_encode( $f['conditional'] ) ) . '"';
             }
+            // Build validation attributes for advanced rules
+            $validation_attrs = '';
+            if ( isset($f['custom_pattern']) && ! empty($f['custom_pattern']) ) {
+                $validation_attrs .= ' data-custom-pattern="' . esc_attr($f['custom_pattern']) . '"';
+                if ( isset($f['custom_pattern_message']) ) {
+                    $validation_attrs .= ' data-custom-pattern-message="' . esc_attr($f['custom_pattern_message']) . '"';
+                }
+            }
+            if ( isset($f['min_length']) && is_numeric($f['min_length']) ) {
+                $validation_attrs .= ' data-min-length="' . absint($f['min_length']) . '" minlength="' . absint($f['min_length']) . '"';
+            }
+            if ( isset($f['max_length']) && is_numeric($f['max_length']) ) {
+                $validation_attrs .= ' data-max-length="' . absint($f['max_length']) . '" maxlength="' . absint($f['max_length']) . '"';
+            }
+            if ( isset($f['min_value']) && is_numeric($f['min_value']) ) {
+                $validation_attrs .= ' data-min-value="' . esc_attr($f['min_value']) . '" min="' . esc_attr($f['min_value']) . '"';
+            }
+            if ( isset($f['max_value']) && is_numeric($f['max_value']) ) {
+                $validation_attrs .= ' data-max-value="' . esc_attr($f['max_value']) . '" max="' . esc_attr($f['max_value']) . '"';
+            }
             echo '<div class="rigaf-field'.( $has_error ? ' rigaf-has-error' : '' ).'"' . $conditional_attr . '>';
             switch($type){
                 case 'checkbox':
@@ -52,6 +72,10 @@ class Render {
                     break;
                 case 'date':
                     printf('<label for="%1$s">%2$s%3$s</label>', esc_attr($field_id), esc_html($label), $required?' '.esc_html__('(required)','rigaf'):'' ); printf('<input type="date" id="%1$s" name="%2$s" value="%3$s" aria-describedby="%4$s" %5$s/>', esc_attr($field_id), esc_attr($name), esc_attr($value), esc_attr($describedby), $required?'aria-required="true" required':'' ); break;
+                case 'calculated':
+                    $calculation = isset($f['calculation']) ? $f['calculation'] : '';
+                    printf('<label for="%1$s">%2$s</label>', esc_attr($field_id), esc_html($label));
+                    printf('<input type="text" id="%1$s" name="%2$s" value="%3$s" data-calculation="%4$s" aria-describedby="%5$s" readonly aria-live="polite"/>', esc_attr($field_id), esc_attr($name), esc_attr($value), esc_attr($calculation), esc_attr($describedby)); break;
                 case 'address':
                     printf('<fieldset aria-describedby="%1$s"><legend>%2$s%3$s</legend>', esc_attr($describedby), esc_html($label), $required?' '.esc_html__('(required)','rigaf'):'' );
                     printf('<label for="%1$s_street">%2$s</label><input id="%1$s_street" name="%3$s_street" value="%4$s"/>', esc_attr($field_id), esc_html__('Street','rigaf'), esc_attr($name), esc_attr( isset($old[$name.'_street'])?$old[$name.'_street']:'' ));
@@ -61,11 +85,11 @@ class Render {
                     echo '</fieldset>'; break;
                 case 'textarea':
                     printf('<label for="%1$s">%2$s%3$s</label>', esc_attr($field_id), esc_html($label), $required?' '.esc_html__('(required)','rigaf'):'' );
-                    printf('<textarea id="%1$s" name="%2$s" rows="5" placeholder="%3$s" aria-describedby="%4$s" %5$s>%6$s</textarea>', esc_attr($field_id), esc_attr($name), esc_attr($placeholder), esc_attr($describedby), $required?'aria-required="true" required':'', esc_textarea($value) ); break;
+                    printf('<textarea id="%1$s" name="%2$s" rows="5" placeholder="%3$s" aria-describedby="%4$s" %5$s%6$s>%7$s</textarea>', esc_attr($field_id), esc_attr($name), esc_attr($placeholder), esc_attr($describedby), $required?'aria-required="true" required':'', $validation_attrs, esc_textarea($value) ); break;
                 default:
                     $input_type = in_array($type,['email','text','tel'],true)?$type:'text';
                     printf('<label for="%1$s">%2$s%3$s</label>', esc_attr($field_id), esc_html($label), $required?' '.esc_html__('(required)','rigaf'):'' );
-                    printf('<input type="%1$s" id="%2$s" name="%3$s" value="%4$s" placeholder="%5$s" aria-describedby="%6$s" %7$s/>', esc_attr($input_type), esc_attr($field_id), esc_attr($name), esc_attr($value), esc_attr($placeholder), esc_attr($describedby), $required?'aria-required="true" required':'' );
+                    printf('<input type="%1$s" id="%2$s" name="%3$s" value="%4$s" placeholder="%5$s" aria-describedby="%6$s" %7$s%8$s/>', esc_attr($input_type), esc_attr($field_id), esc_attr($name), esc_attr($value), esc_attr($placeholder), esc_attr($describedby), $required?'aria-required="true" required':'', $validation_attrs );
             }
             if ( $help ) { printf('<div id="%1$s" class="rigaf-helptext">%2$s</div>', esc_attr($describedby), esc_html($help) ); }
             if ( $has_error ) { printf('<div id="%1$s" class="rigaf-error" role="alert">%2$s</div>', esc_attr($err_id), esc_html($errors[$name]) ); }

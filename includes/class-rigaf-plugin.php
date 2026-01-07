@@ -273,8 +273,8 @@ class Plugin {
         echo '<div class="wrap"><h1>'. esc_html__('Accessible Builder', 'rigaf') .'</h1><p>'. esc_html__('Use the keyboard to reorder fields. Each row has Move Up and Move Down buttons.', 'rigaf') .'</p>';
         echo '<form method="post" action="'. esc_url( admin_url('admin-post.php') ) .'">'; wp_nonce_field('rigaf_save_builder', 'rigaf_save_builder_nonce');
         echo '<input type="hidden" name="action" value="rigaf_save_builder" /><input type="hidden" name="form_id" value="'. esc_attr($form_id) .'" />';
-        echo '<table class="widefat rigaf-table" role="grid" aria-label="Form fields"><thead><tr><th>'.esc_html__('Type','rigaf').'</th><th>'.esc_html__('Name','rigaf').'</th><th>'.esc_html__('Label','rigaf').'</th><th>'.esc_html__('Required','rigaf').'</th><th>'.esc_html__('Options (JSON)','rigaf').'</th><th>'.esc_html__('Help','rigaf').'</th><th>'.esc_html__('Conditional (JSON)','rigaf').'</th><th>'.esc_html__('Actions','rigaf').'</th></tr></thead><tbody id="rigaf-rows">';
-        $i=0; foreach($fields as $f){ $type=$f['type']??'text'; $name=$f['name']??''; $label=$f['label']??''; $req=!empty($f['required'])?1:0; $opts=isset($f['options'])?wp_json_encode($f['options']):''; $help=$f['help']??''; $cond=isset($f['conditional'])?wp_json_encode($f['conditional']):'';
+        echo '<table class="widefat rigaf-table" role="grid" aria-label="Form fields"><thead><tr><th>'.esc_html__('Type','rigaf').'</th><th>'.esc_html__('Name','rigaf').'</th><th>'.esc_html__('Label','rigaf').'</th><th>'.esc_html__('Required','rigaf').'</th><th>'.esc_html__('Options (JSON)','rigaf').'</th><th>'.esc_html__('Help','rigaf').'</th><th>'.esc_html__('Calculation','rigaf').'</th><th>'.esc_html__('Conditional (JSON)','rigaf').'</th><th>'.esc_html__('Validation (JSON)','rigaf').'</th><th>'.esc_html__('Actions','rigaf').'</th></tr></thead><tbody id="rigaf-rows">';
+        $i=0; foreach($fields as $f){ $type=$f['type']??'text'; $name=$f['name']??''; $label=$f['label']??''; $req=!empty($f['required'])?1:0; $opts=isset($f['options'])?wp_json_encode($f['options']):''; $help=$f['help']??''; $calc=$f['calculation']??''; $cond=isset($f['conditional'])?wp_json_encode($f['conditional']):''; $validation=''; if(isset($f['custom_pattern'])||isset($f['min_length'])||isset($f['max_length'])||isset($f['min_value'])||isset($f['max_value'])||isset($f['custom_pattern_message'])){$val_obj=array_filter(['custom_pattern'=>$f['custom_pattern']??null,'custom_pattern_message'=>$f['custom_pattern_message']??null,'min_length'=>$f['min_length']??null,'max_length'=>$f['max_length']??null,'min_value'=>$f['min_value']??null,'max_value'=>$f['max_value']??null],function($v){return $v!==null;});if(!empty($val_obj))$validation=wp_json_encode($val_obj);}
             echo '<tr>';
             printf('<td><select name="fields[%1$d][type]">%2$s</select></td>', $i, self::options_html($type));
             printf('<td><input aria-label="Field name row %1$d" name="fields[%1$d][name]" value="%2$s"/></td>', $i, esc_attr($name));
@@ -282,7 +282,9 @@ class Plugin {
             printf('<td><input type="checkbox" aria-label="Required row %1$d" name="fields[%1$d][required]" value="1" %2$s/></td>', $i, checked($req,1,false));
             printf('<td><textarea aria-label="Options row %1$d" name="fields[%1$d][options]" rows="2">%2$s</textarea></td>', $i, esc_textarea($opts));
             printf('<td><input aria-label="Help row %1$d" name="fields[%1$d][help]" value="%2$s"/></td>', $i, esc_attr($help));
+            printf('<td><input aria-label="Calculation row %1$d" name="fields[%1$d][calculation]" value="%2$s" placeholder="%3$s"/></td>', $i, esc_attr($calc), esc_attr('field1 + field2 * 0.1'));
             printf('<td><textarea aria-label="Conditional row %1$d" name="fields[%1$d][conditional]" rows="2" placeholder="%3$s">%2$s</textarea></td>', $i, esc_textarea($cond), esc_attr('{"field":"fieldname","operator":"==","value":"somevalue"}'));
+            printf('<td><textarea aria-label="Validation row %1$d" name="fields[%1$d][validation]" rows="2" placeholder="%3$s">%2$s</textarea></td>', $i, esc_textarea($validation), esc_attr('{"min_length":5,"max_length":100}'));
             echo '<td class="rigaf-actions"><div class="rigaf-kb-controls">';
             echo '<button name="move" value="up:'.$i.'" class="button" aria-label="Move row '.$i.' up">'.esc_html__('Move Up','rigaf').'</button>';
             echo '<button name="move" value="down:'.$i.'" class="button" aria-label="Move row '.$i.' down">'.esc_html__('Move Down','rigaf').'</button>';
@@ -296,11 +298,13 @@ class Plugin {
         printf('<td><input type="checkbox" aria-label="New field required" name="fields[%1$d][required]" value="1"/></td>', $i);
         printf('<td><textarea aria-label="New field options" name="fields[%1$d][options]" rows="2"></textarea></td>', $i);
         printf('<td><input aria-label="New field help" name="fields[%1$d][help]" value=""/></td>', $i);
+        printf('<td><input aria-label="New field calculation" name="fields[%1$d][calculation]" value="" placeholder="%2$s"/></td>', $i, esc_attr('field1 + field2 * 0.1'));
         printf('<td><textarea aria-label="New field conditional" name="fields[%1$d][conditional]" rows="2" placeholder="%2$s"></textarea></td>', $i, esc_attr('{"field":"fieldname","operator":"==","value":"somevalue"}'));
+        printf('<td><textarea aria-label="New field validation" name="fields[%1$d][validation]" rows="2" placeholder="%2$s"></textarea></td>', $i, esc_attr('{"min_length":5,"max_length":100}'));
         echo '<td></td></tr>';
         echo '</tbody></table>'; submit_button( __('Save Fields','rigaf') ); echo '</form></div>';
     }
-    private static function options_html($current){ $types=['text','email','tel','textarea','select','radio','checkbox','checkbox_group','date','file','address']; $out=''; foreach($types as $t){ $out.='<option value="'.esc_attr($t).'" '.selected($current,$t,false).'>'.esc_html(ucfirst(str_replace('_',' ',$t))).'</option>'; } return $out; }
+    private static function options_html($current){ $types=['text','email','tel','textarea','select','radio','checkbox','checkbox_group','date','file','address','calculated']; $out=''; foreach($types as $t){ $out.='<option value="'.esc_attr($t).'" '.selected($current,$t,false).'>'.esc_html(ucfirst(str_replace('_',' ',$t))).'</option>'; } return $out; }
     public function save_builder() {
         if ( ! isset($_POST['rigaf_save_builder_nonce']) || ! wp_verify_nonce($_POST['rigaf_save_builder_nonce'], 'rigaf_save_builder') ) wp_die('Invalid');
         $form_id = isset($_POST['form_id']) ? absint($_POST['form_id']) : 0; if ( ! $form_id ) wp_die('Invalid form'); if ( ! current_user_can('edit_post', $form_id) ) wp_die('Unauthorized');
@@ -309,7 +313,9 @@ class Plugin {
             if ( empty($f['name']) ) continue;
             $row = ['type'=>sanitize_text_field($f['type']),'name'=>sanitize_key($f['name']),'label'=>sanitize_text_field($f['label']),'required'=>!empty($f['required']),'help'=>sanitize_text_field($f['help'])];
             if ( ! empty($f['options']) ) { $opts = json_decode( wp_unslash( $f['options'] ), true ); if ( json_last_error() === JSON_ERROR_NONE && is_array($opts) ) { $row['options'] = $opts; } }
+            if ( ! empty($f['calculation']) ) { $row['calculation'] = sanitize_text_field($f['calculation']); }
             if ( ! empty($f['conditional']) ) { $cond = json_decode( wp_unslash( $f['conditional'] ), true ); if ( json_last_error() === JSON_ERROR_NONE && is_array($cond) ) { $row['conditional'] = $cond; } }
+            if ( ! empty($f['validation']) ) { $val = json_decode( wp_unslash( $f['validation'] ), true ); if ( json_last_error() === JSON_ERROR_NONE && is_array($val) ) { if(isset($val['custom_pattern']))$row['custom_pattern']=sanitize_text_field($val['custom_pattern']); if(isset($val['custom_pattern_message']))$row['custom_pattern_message']=sanitize_text_field($val['custom_pattern_message']); if(isset($val['min_length'])&&is_numeric($val['min_length']))$row['min_length']=absint($val['min_length']); if(isset($val['max_length'])&&is_numeric($val['max_length']))$row['max_length']=absint($val['max_length']); if(isset($val['min_value'])&&is_numeric($val['min_value']))$row['min_value']=$val['min_value']; if(isset($val['max_value'])&&is_numeric($val['max_value']))$row['max_value']=$val['max_value']; } }
             $clean[] = $row;
         }
         update_post_meta( $form_id, '_rigaf_fields', wp_json_encode( $clean ) ); wp_safe_redirect( admin_url('admin.php?page=rigaf_builder&form_id='.$form_id.'&saved=1') ); exit;

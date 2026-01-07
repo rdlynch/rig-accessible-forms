@@ -3,7 +3,7 @@ Contributors: ruralimpactgroup
 Tags: forms, accessibility, wcag, contact form, accessible
 Requires at least: 5.8
 Tested up to: 6.4
-Stable tag: 0.4.0
+Stable tag: 0.5.0
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -18,8 +18,10 @@ RIG Accessible Forms is a WordPress plugin designed specifically for accessibili
 
 * **Gutenberg Block** - Modern block editor integration with live preview
 * **Conditional Logic** - Show/hide fields based on user selections
+* **Advanced Validation** - Custom regex patterns, min/max length, min/max value validation
+* **Calculation Fields** - Auto-calculate totals based on other fields with mathematical formulas
 * **Accessible Form Builder** - Keyboard-accessible admin interface
-* **Multiple Field Types** - Text, email, tel, textarea, select, radio, checkbox groups, date, file upload, address
+* **Multiple Field Types** - Text, email, tel, textarea, select, radio, checkbox groups, date, file upload, address, calculated
 * **Client-Side Validation** - Progressive enhancement with accessible error handling
 * **File Upload Security** - MIME type validation, size limits, extension checking
 * **Anti-Spam Protection** - Honeypot, rate limiting, timing validation
@@ -69,7 +71,35 @@ RIG Accessible Forms is a WordPress plugin designed specifically for accessibili
 3. The field will only show when the specified condition is met
 4. Supports operators: ==, !=, >, >=, <, <=, contains, not_contains, empty, not_empty
 
+**Using Advanced Validation:**
+
+1. In the Form Builder, find the "Validation (JSON)" column
+2. Enter a JSON object with validation rules:
+   - `{"min_length":5,"max_length":100}` - Character length limits
+   - `{"min_value":0,"max_value":999}` - Numeric value limits
+   - `{"custom_pattern":"/^[A-Z]{2,5}$/","custom_pattern_message":"Must be 2-5 uppercase letters"}` - Custom regex validation
+
+**Using Calculation Fields:**
+
+1. In the Form Builder, set field type to "Calculated"
+2. In the "Calculation" column, enter a formula using field names: `quantity * price`
+3. Supports operators: +, -, *, /, ()
+4. Example: `(subtotal + shipping) * 1.15` (adds 15% tax)
+5. Field updates automatically as user enters values
+6. Results are announced to screen readers
+
 == Changelog ==
+
+= 0.5.0 =
+* **Added advanced validation rules** - Custom regex patterns, min/max length, min/max value validation
+* **Added calculation fields** - Auto-calculate totals based on other field values
+* New "calculated" field type with real-time updates
+* Support for mathematical formulas (+, -, *, /, parentheses)
+* Client-side and server-side validation for custom patterns
+* HTML5 validation attributes (minlength, maxlength, min, max, pattern)
+* Accessible announcements for calculated results
+* Added Validation (JSON) column to Form Builder
+* Added Calculation column to Form Builder
 
 = 0.4.0 =
 * **Added conditional logic** - Show/hide fields based on user selections
