@@ -1,0 +1,17 @@
+{
+  "apiVersion": 3,
+  "name": "rigaf/form",
+  "title": "Accessible Form",
+  "category": "widgets",
+  "icon": "feedback",
+  "attributes": {
+    "formId": {
+      "type": "integer",
+      "default": 0
+    }
+  },
+  "editorScript": "file:./edit.js",
+  "supports": {
+    "html": false
+  }
+}

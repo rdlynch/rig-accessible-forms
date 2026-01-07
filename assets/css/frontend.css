@@ -1,0 +1,12 @@
+.rigaf-field{margin-bottom:1rem;}
+.rigaf-field label{display:block;margin-bottom:.25rem;font-weight:600}
+.rigaf-field input[type=text],.rigaf-field input[type=email],.rigaf-field input[type=tel],.rigaf-field input[type=date],.rigaf-field textarea,.rigaf-field select{width:100%;max-width:40rem;padding:.5rem;border:1px solid #666;border-radius:.25rem}
+.rigaf-field input:focus,.rigaf-field textarea:focus,.rigaf-field select:focus{outline:2px solid #1F4E79;outline-offset:2px}
+.rigaf-checkbox{display:flex;gap:.5rem;align-items:flex-start}
+.rigaf-error{margin-top:.25rem;color:#9E2B25}
+.rigaf-error-summary{border:2px solid #9E2B25;padding:1rem;margin-bottom:1rem;background:#fff}
+.rigaf-success{border:2px solid #2F5233;padding:1rem;margin-bottom:1rem;background:#fff}
+.rigaf-helptext{font-size:.9rem;color:#333}
+.rigaf-submit{padding:.6rem 1rem;border:1px solid #333;border-radius:.25rem;background:#1F4E79;color:#fff;cursor:pointer}
+.rigaf-submit:focus{outline:2px solid #000;outline-offset:2px}
+.rigaf-hp{position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden}
