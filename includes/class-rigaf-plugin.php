@@ -29,7 +29,11 @@ class Plugin {
     public function register_assets() {
         wp_register_style( 'rigaf-frontend', RIGAF_URL . 'assets/css/frontend.css', [], RIGAF_VERSION, 'all' );
         wp_register_script( 'rigaf-frontend', RIGAF_URL . 'assets/js/frontend.js', [], RIGAF_VERSION, true );
-        wp_localize_script( 'rigaf-frontend', 'rigafI18n', ['errorSummaryTitle'=>__('There is a problem','rigaf'),'errorSummaryInstruction'=>__('Fix the following and resubmit.','rigaf')] );
+        wp_localize_script( 'rigaf-frontend', 'rigafI18n', [
+            'errorSummaryTitle' => __('There is a problem','rigaf'),
+            'errorSummaryInstruction' => __('Fix the following and resubmit.','rigaf'),
+            'submitting' => __('Submitting...','rigaf')
+        ]);
     }
     public function frontend_assets() {}
     public function admin_a11y_styles( $hook ) {
