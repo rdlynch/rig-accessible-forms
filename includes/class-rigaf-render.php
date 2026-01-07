@@ -17,6 +17,7 @@ class Render {
         }
         echo '<form method="post" action="'.$action.'" '.( $has_file ? 'enctype="multipart/form-data"' : '' ).' novalidate>';
         echo '<input type="hidden" name="action" value="rigaf_submit" /><input type="hidden" name="rigaf_form_id" value="'.absint($form_id).'" /><input type="hidden" name="rigaf_nonce" value="'.esc_attr($nonce).'" />';
+        echo '<input type="hidden" name="rigaf_ts" value="'.time().'" />';
         echo '<div class="rigaf-hp" aria-hidden="true" hidden><label>Leave this field empty<input type="text" name="rigaf_hp" value="" tabindex="-1" autocomplete="off"></label></div>';
         foreach ( $fields as $f ) {
             $type=$f['type']??'text'; $name=sanitize_key($f['name']); $label=$f['label']??ucfirst($name); $required=!empty($f['required']); $placeholder=$f['placeholder']??''; $help=$f['help']??''; $options=(isset($f['options']) && is_array($f['options']))?$f['options']:[];
@@ -40,15 +41,19 @@ class Render {
                     printf('<select id="%1$s" name="%2$s" aria-describedby="%3$s" %4$s>', esc_attr($field_id), esc_attr($name), esc_attr($describedby), $required?'aria-required="true" required':'' );
                     echo '<option value="">'.esc_html__('Select an option','rigaf').'</option>'; foreach($options as $opt){ $ov=isset($opt['value'])?$opt['value']:(string)$opt; $ot=isset($opt['label'])?$opt['label']:(string)$opt; printf('<option value="%1$s" %2$s>%3$s</option>', esc_attr($ov), selected($value,$ov,false), esc_html($ot)); } echo '</select>'; break;
                 case 'file':
-                    printf('<label for="%1$s">%2$s%3$s</label>', esc_attr($field_id), esc_html($label), $required?' '.esc_html__('(required)','rigaf'):'' ); printf('<input type="file" id="%1$s" name="%2$s" aria-describedby="%3$s" %4$s/>', esc_attr($field_id), esc_attr($name), esc_attr($describedby), $required?'aria-required="true" required':'' ); break;
+                    $allowed_exts = isset($f['allowed_extensions']) && is_array($f['allowed_extensions']) ? $f['allowed_extensions'] : ['jpg','jpeg','png','gif','pdf','doc','docx','xls','xlsx'];
+                    $accept_attr = '.' . implode(',.', array_map('strtolower', $allowed_exts));
+                    printf('<label for="%1$s">%2$s%3$s</label>', esc_attr($field_id), esc_html($label), $required?' '.esc_html__('(required)','rigaf'):'' );
+                    printf('<input type="file" id="%1$s" name="%2$s" accept="%3$s" aria-describedby="%4$s" %5$s/>', esc_attr($field_id), esc_attr($name), esc_attr($accept_attr), esc_attr($describedby), $required?'aria-required="true" required':'' );
+                    break;
                 case 'date':
                     printf('<label for="%1$s">%2$s%3$s</label>', esc_attr($field_id), esc_html($label), $required?' '.esc_html__('(required)','rigaf'):'' ); printf('<input type="date" id="%1$s" name="%2$s" value="%3$s" aria-describedby="%4$s" %5$s/>', esc_attr($field_id), esc_attr($name), esc_attr($value), esc_attr($describedby), $required?'aria-required="true" required':'' ); break;
                 case 'address':
                     printf('<fieldset aria-describedby="%1$s"><legend>%2$s%3$s</legend>', esc_attr($describedby), esc_html($label), $required?' '.esc_html__('(required)','rigaf'):'' );
-                    printf('<label for="%1$s_street">%2$s</label><input id="%1$s_street" name="%3$s_street" value="%4$s"/>', esc_attr($field_id), esc_html__('Street','rigaf'), esc_attr($name), esc_attr( isset($old[$name+'_street'])?$old[$name+'_street']:'' ));
-                    printf('<label for="%1$s_city">%2$s</label><input id="%1$s_city" name="%3$s_city" value="%4$s"/>', esc_attr($field_id), esc_html__('City','rigaf'), esc_attr($name), esc_attr( isset($old[$name+'_city'])?$old[$name+'_city']:'' ));
-                    printf('<label for="%1$s_state">%2$s</label><input id="%1$s_state" name="%3$s_state" value="%4$s"/>', esc_attr($field_id), esc_html__('State','rigaf'), esc_attr($name), esc_attr( isset($old[$name+'_state'])?$old[$name+'_state']:'' ));
-                    printf('<label for="%1$s_zip">%2$s</label><input id="%1$s_zip" name="%3$s_zip" value="%4$s"/>', esc_attr($field_id), esc_html__('ZIP','rigaf'), esc_attr($name), esc_attr( isset($old[$name+'_zip'])?$old[$name+'_zip']:'' ));
+                    printf('<label for="%1$s_street">%2$s</label><input id="%1$s_street" name="%3$s_street" value="%4$s"/>', esc_attr($field_id), esc_html__('Street','rigaf'), esc_attr($name), esc_attr( isset($old[$name.'_street'])?$old[$name.'_street']:'' ));
+                    printf('<label for="%1$s_city">%2$s</label><input id="%1$s_city" name="%3$s_city" value="%4$s"/>', esc_attr($field_id), esc_html__('City','rigaf'), esc_attr($name), esc_attr( isset($old[$name.'_city'])?$old[$name.'_city']:'' ));
+                    printf('<label for="%1$s_state">%2$s</label><input id="%1$s_state" name="%3$s_state" value="%4$s"/>', esc_attr($field_id), esc_html__('State','rigaf'), esc_attr($name), esc_attr( isset($old[$name.'_state'])?$old[$name.'_state']:'' ));
+                    printf('<label for="%1$s_zip">%2$s</label><input id="%1$s_zip" name="%3$s_zip" value="%4$s"/>', esc_attr($field_id), esc_html__('ZIP','rigaf'), esc_attr($name), esc_attr( isset($old[$name.'_zip'])?$old[$name.'_zip']:'' ));
                     echo '</fieldset>'; break;
                 case 'textarea':
                     printf('<label for="%1$s">%2$s%3$s</label>', esc_attr($field_id), esc_html($label), $required?' '.esc_html__('(required)','rigaf'):'' );

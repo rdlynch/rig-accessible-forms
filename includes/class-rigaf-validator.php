@@ -9,8 +9,47 @@ class Validator {
         foreach ( $this->fields as $f ) {
             $name = isset($f['name']) ? $f['name'] : ''; if ( ! $name ) continue;
             $required = ! empty( $f['required'] ); $type = isset($f['type']) ? $f['type'] : 'text';
-            if ( $type === 'file' ) { $file = $this->files[$name] ?? null; if ( $required && ( empty($file) || empty($file['size']) ) ) { $errors[$name] = __('This file is required.','rigaf'); continue; }
-                if ( $file && ! empty($file['size']) ) { $ok_types=['image/jpeg','image/png','application/pdf','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document']; if ( ! in_array($file['type'],$ok_types,true) ) { $errors[$name]=__('This file type is not allowed.','rigaf'); } } continue; }
+            if ( $type === 'file' ) {
+                $file = $this->files[$name] ?? null;
+                if ( $required && ( empty($file) || empty($file['size']) ) ) {
+                    $errors[$name] = __('This file is required.','rigaf');
+                    continue;
+                }
+                if ( $file && ! empty($file['size']) ) {
+                    // Check for upload errors
+                    if ( ! empty( $file['error'] ) && $file['error'] !== UPLOAD_ERR_OK ) {
+                        $errors[$name] = __('File upload failed. Please try again.','rigaf');
+                        continue;
+                    }
+                    // Get max file size from field config or use 5MB default
+                    $max_size = isset($f['max_size']) ? absint($f['max_size']) : 5242880; // 5MB in bytes
+                    if ( $file['size'] > $max_size ) {
+                        $errors[$name] = sprintf( __('File size exceeds the maximum allowed size of %s MB.','rigaf'), number_format($max_size / 1048576, 1) );
+                        continue;
+                    }
+                    // Get allowed MIME types from field config or use defaults
+                    $allowed_types = isset($f['allowed_types']) && is_array($f['allowed_types'])
+                        ? $f['allowed_types']
+                        : ['image/jpeg','image/png','image/gif','application/pdf','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
+                    // Validate MIME type using WordPress function for better security
+                    $filetype = wp_check_filetype_and_ext( $file['tmp_name'], $file['name'] );
+                    $real_mime = $filetype['type'];
+                    if ( ! $real_mime || ! in_array( $real_mime, $allowed_types, true ) ) {
+                        $errors[$name] = __('This file type is not allowed.','rigaf');
+                        continue;
+                    }
+                    // Additional extension validation
+                    $allowed_extensions = isset($f['allowed_extensions']) && is_array($f['allowed_extensions'])
+                        ? $f['allowed_extensions']
+                        : ['jpg','jpeg','png','gif','pdf','doc','docx','xls','xlsx'];
+                    $ext = $filetype['ext'];
+                    if ( ! $ext || ! in_array( strtolower($ext), array_map('strtolower', $allowed_extensions), true ) ) {
+                        $errors[$name] = __('This file extension is not allowed.','rigaf');
+                        continue;
+                    }
+                }
+                continue;
+            }
             if ( $type === 'checkbox_group' ) { $arr = isset($this->input[$name])?(array)$this->input[$name]:[]; if ( $required && empty($arr) ) { $errors[$name]=__('Select at least one option.','rigaf'); } continue; }
             if ( $type === 'address' ) { if ( $required ) { foreach(['street','city','state','zip'] as $p){ if ( empty( $this->input[$name.'_'.$p] ) ) { $errors[$name] = __('Complete the address.','rigaf'); break; } } } continue; }
             $val = $this->input[$name] ?? ''; $str = is_array($val) ? implode(', ',$val) : trim((string)$val);

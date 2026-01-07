@@ -48,11 +48,52 @@ class Plugin {
         if ( ! isset( $_POST['rigaf_nonce'] ) || ! wp_verify_nonce( $_POST['rigaf_nonce'], 'rigaf_submit' ) ) { wp_die( __( 'Invalid request.', 'rigaf' ), 400 ); }
         $form_id = isset( $_POST['rigaf_form_id'] ) ? absint( $_POST['rigaf_form_id'] ) : 0;
         if ( ! $form_id ) wp_die( __( 'Form not found.', 'rigaf' ), 400 );
+
+        // Anti-spam checks
+        $errors = [];
+
+        // Check honeypot
+        if ( ! empty( $_POST['rigaf_hp'] ) ) {
+            $errors['_global'] = __( 'Spam detected.', 'rigaf' );
+        }
+
+        // Check referer for additional CSRF protection
+        $referer = wp_get_referer();
+        if ( ! $referer || ! wp_validate_redirect( $referer, false ) ) {
+            wp_die( __( 'Invalid request source.', 'rigaf' ), 403 );
+        }
+
+        // Rate limiting by IP
+        $user_ip = $this->get_client_ip();
+        $rate_limit_key = 'rigaf_rate_' . md5( $user_ip . $form_id );
+        $submissions = get_transient( $rate_limit_key );
+        $max_submissions = apply_filters( 'rigaf_rate_limit_max', 5, $form_id );
+        $rate_window = apply_filters( 'rigaf_rate_limit_window', 900, $form_id ); // 15 minutes
+
+        if ( false === $submissions ) {
+            set_transient( $rate_limit_key, 1, $rate_window );
+        } else {
+            if ( $submissions >= $max_submissions ) {
+                wp_die( __( 'Too many submission attempts. Please try again later.', 'rigaf' ), 429 );
+            }
+            set_transient( $rate_limit_key, $submissions + 1, $rate_window );
+        }
+
+        // Timing check - form must be displayed for at least 3 seconds
+        if ( isset( $_POST['rigaf_ts'] ) ) {
+            $timestamp = absint( $_POST['rigaf_ts'] );
+            $elapsed = time() - $timestamp;
+            $min_time = apply_filters( 'rigaf_min_submit_time', 3, $form_id );
+            if ( $elapsed < $min_time ) {
+                $errors['_global'] = __( 'Form submitted too quickly. Please try again.', 'rigaf' );
+            }
+        }
+
         $fields = json_decode( (string) get_post_meta( $form_id, '_rigaf_fields', true ), true ); if ( ! is_array( $fields ) ) $fields = [];
         if ( ! empty( $_FILES ) ) { require_once ABSPATH . 'wp-admin/includes/file.php'; }
         $validator = new \RIGAF\Validator( $fields, $_POST, $_FILES );
-        $errors = $validator->validate();
-        if ( ! empty( $_POST['rigaf_hp'] ) ) { $errors['_global'] = __( 'Spam detected.', 'rigaf' ); }
+        $validation_errors = $validator->validate();
+        $errors = array_merge( $errors, $validation_errors );
         if ( ! empty( $errors ) ) {
             $store_key = 'rigaf_' . sanitize_key( $_POST['rigaf_nonce'] );
             set_transient( $store_key, [ 'errors' => $errors, 'old' => wp_unslash( $_POST ) ], MINUTE_IN_SECONDS * 10 );
@@ -227,5 +268,31 @@ class Plugin {
     public function export_csv() {
         if ( ! isset($_POST['rigaf_export_csv_nonce']) || ! wp_verify_nonce($_POST['rigaf_export_csv_nonce'],'rigaf_export_csv') ) wp_die('Invalid');
         $form_id = isset($_POST['form_id']) ? absint($_POST['form_id']) : 0; if ( ! $form_id ) wp_die('Invalid form'); \RIGAF\Export::csv( $form_id );
+    }
+
+    /**
+     * Get client IP address with proxy support
+     * @return string
+     */
+    private function get_client_ip() {
+        $ip_keys = ['HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP', 'REMOTE_ADDR'];
+        foreach ( $ip_keys as $key ) {
+            if ( ! empty( $_SERVER[ $key ] ) ) {
+                $ip = sanitize_text_field( wp_unslash( $_SERVER[ $key ] ) );
+                // Handle multiple IPs (X-Forwarded-For can contain multiple IPs)
+                if ( strpos( $ip, ',' ) !== false ) {
+                    $ips = explode( ',', $ip );
+                    $ip = trim( $ips[0] );
+                }
+                // Validate IP address
+                if ( filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE ) !== false ) {
+                    return $ip;
+                }
+                if ( filter_var( $ip, FILTER_VALIDATE_IP ) !== false ) {
+                    return $ip;
+                }
+            }
+        }
+        return '0.0.0.0';
     }
 }
