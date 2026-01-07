@@ -12,6 +12,7 @@ class Plugin {
         add_action( 'init', [ $this, 'register_assets' ] );
         add_action( 'init', [ $this, 'register_shortcodes' ] );
         add_action( 'init', [ $this, 'register_cpts' ] );
+        add_action( 'init', [ $this, 'register_block' ] );
         add_action( 'admin_enqueue_scripts', [ $this, 'admin_a11y_styles' ] );
         add_action( 'wp_enqueue_scripts', [ $this, 'frontend_assets' ] );
         add_action( 'admin_post_rigaf_submit', [ $this, 'handle_submit' ] );
@@ -41,6 +42,63 @@ class Plugin {
     }
     public function register_shortcodes() { add_shortcode( 'rigaf_form', [ $this, 'shortcode_form' ] ); }
     public function register_cpts() { \RIGAF\Form_CPT::register(); }
+
+    /**
+     * Register Gutenberg block
+     */
+    public function register_block() {
+        // Check if block editor is available
+        if ( ! function_exists( 'register_block_type' ) ) {
+            return;
+        }
+
+        // Register block editor script
+        wp_register_script(
+            'rigaf-block-editor',
+            RIGAF_URL . 'blocks/form/edit.js',
+            [
+                'wp-blocks',
+                'wp-element',
+                'wp-block-editor',
+                'wp-components',
+                'wp-data',
+                'wp-i18n',
+                'wp-server-side-render'
+            ],
+            RIGAF_VERSION,
+            true
+        );
+
+        // Register the block type with server-side rendering
+        register_block_type( 'rigaf/form', [
+            'editor_script' => 'rigaf-block-editor',
+            'render_callback' => [ $this, 'render_block' ],
+            'attributes' => [
+                'formId' => [
+                    'type' => 'integer',
+                    'default' => 0
+                ]
+            ]
+        ]);
+    }
+
+    /**
+     * Render callback for the block
+     */
+    public function render_block( $attributes ) {
+        $form_id = isset( $attributes['formId'] ) ? absint( $attributes['formId'] ) : 0;
+        if ( ! $form_id ) {
+            return '<div class="rigaf-block-notice" style="padding:1rem;border:1px dashed #ccc;background:#f9f9f9;color:#666;">' .
+                   esc_html__( 'Please select a form in the block settings.', 'rigaf' ) .
+                   '</div>';
+        }
+
+        wp_enqueue_style( 'rigaf-frontend' );
+        wp_enqueue_script( 'rigaf-frontend' );
+
+        return \RIGAF\Render::form( $form_id );
+    }
+
     public function shortcode_form( $atts ) {
         $atts = shortcode_atts( [ 'id' => 0 ], $atts, 'rigaf_form' );
         $form_id = absint( $atts['id'] );

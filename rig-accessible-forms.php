@@ -3,7 +3,7 @@
  * Plugin Name: RIG Accessible Forms
  * Plugin URI: https://ruralimpactgroup.com
  * Description: Fully accessible forms plugin focused on both public and admin experiences. WCAG 2.2 AA minded. Minimal, no-frills, keyboard-first.
- * Version: 0.2.0
+ * Version: 0.3.0
  * Author: The Rural Impact Group
  * Author URI: https://ruralimpactgroup.com
  * License: GPLv2 or later
@@ -12,7 +12,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'RIGAF_VERSION', '0.2.0' );
+define( 'RIGAF_VERSION', '0.3.0' );
 define( 'RIGAF_PATH', plugin_dir_path( __FILE__ ) );
 define( 'RIGAF_URL', plugin_dir_url( __FILE__ ) );
 
